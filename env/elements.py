@@ -57,6 +57,7 @@ class Task:
         self.end_day = -1
         self.hangar = -1
 
+        self.scheduled = False
         self.priority = priority
 
         self.up = False

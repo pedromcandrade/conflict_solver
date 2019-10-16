@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 class Agent:
     def __init__(self, env_name, gamma, buffer_size, batch_size, buffer_start,
                  target_update_freq, update_freq, learning_rate,
-                 max_episodes, max_steps, exp_init, exp_final,
+                 max_frames, max_steps, exp_init, exp_final,
                  exp_final_frame, training=True,
                  use_target=True, restore_session=False, write_summary=True):
 
@@ -23,7 +23,7 @@ class Agent:
         self.target_update_freq = target_update_freq
         self.update_freq = update_freq
         self.learning_rate = learning_rate
-        self.max_episodes = max_episodes
+        self.max_frames = max_frames
         self.max_steps = max_steps
         self.training = training
         self.use_target = use_target
@@ -75,7 +75,7 @@ class Agent:
             if self.write_summary:
                 self.summary_writer = tf.summary.FileWriter('./log')
             sess.run(tf.global_variables_initializer())
-            episode = 0
+            frame = 0
             # TODO: restore previous session
 
             state = self.env.reset()
@@ -89,7 +89,6 @@ class Agent:
                 action = random.randint(0, self.action_size - 1)
 
                 next_state, reward, done, _ = self.env.step(action)
-
                 self.replay_buffer.add((state, action,
                                         reward, next_state, done))
                 if done:
@@ -114,14 +113,14 @@ class Agent:
             c_after = 0
             a_before = 0
             a_after = 0
-            while episode < self.max_episodes:
-                epoch_frame = 0
+            while frame < self.max_frames:
                 state = self.env.reset()
+
                 sum_rewards = 0
                 for step in range(self.max_steps):
                     action = self.action_getter.get_best_action(
                         sess,
-                        episode,
+                        frame,
                         state,
                         self.dqn_network,
                         pre_pop=False
@@ -133,7 +132,7 @@ class Agent:
 
                     all_rewards.append(reward)
 
-                    if episode % self. update_freq == 0:
+                    if frame % self.update_freq == 0:
                         batch = self.replay_buffer.sample(self.batch_size)
 
                         states_b = np.array([each[0] for each in batch])
@@ -183,19 +182,16 @@ class Agent:
                                 self.dqn_network.target_Q: target_q,
                                 self.dqn_network.actions: actions_b
                             })
-                        self.summary_writer.add_summary(summaries, episode)
+                        self.summary_writer.add_summary(summaries, frame)
 
-                    if (self.use_target and
-                            episode % self.target_update_freq == 0):
+                    if self.use_target and frame % self.target_update_freq == 0:
                         self.network_copier.update_target_graph(sess)
 
-                    episode += 1
-                    epoch_frame += 1
-
+                    frame += 1
                     conflicts += 1
 
                     if done:
-                        print("Training... ", (episode * 100) / self.max_episodes, "%")
+                        print("Training... ", (frame * 100) / self.max_frames, "%")
                         print("Conflicts: ", self.env.conf_number)
                         print("A-check conflicts: ", self.env.a_check_conf_number)
                         print("C-check conflicts: ", self.env.c_check_conf_number)
@@ -250,12 +246,13 @@ if __name__ == '__main__':
                       target_update_freq=10000,
                       update_freq=4,
                       learning_rate=0.00025,
-                      max_episodes=7500,
+                      max_frames=5000,
                       max_steps=200000000,
                       exp_init=1.0,
                       exp_final=0.05,
-                      exp_final_frame=500000)
+                      exp_final_frame=5000)
     dqn_agent.train()
+
 
     plot1 = dqn_agent.plot1
     plot2 = dqn_agent.plot2

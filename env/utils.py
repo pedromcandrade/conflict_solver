@@ -47,11 +47,19 @@ def render_calendar_excel(env, name):
 
     c_format = workbook.add_format()
     c_format.set_pattern(1)
-    c_format.set_bg_color('green')
+    c_format.set_bg_color('#008000') #green
+
+    c_format_before_dd = workbook.add_format()
+    c_format_before_dd.set_pattern(1)
+    c_format_before_dd.set_bg_color("#7CFC00") #light green
 
     a_format = workbook.add_format()
     a_format.set_pattern(1)
-    a_format.set_bg_color('blue')
+    a_format.set_bg_color('#0000FF') #blue
+
+    a_format_before_dd = workbook.add_format()
+    a_format_before_dd.set_pattern(1)
+    a_format_before_dd.set_bg_color("#87CEFA") #light blue
 
     tolerance_used_format = workbook.add_format()
     tolerance_used_format.set_pattern(1)
@@ -69,11 +77,21 @@ def render_calendar_excel(env, name):
         sorted_list = sorted(day.c_checks, key=lambda x: x.number)
 
         for c in range(len(sorted_list)):  # paint c_checks
-            ws.write(row + c, column, sorted_list[c].number, c_format)
+            if sorted_list[c].end_day == sorted_list[c].due_date:
+                ws.write(row + c, column, sorted_list[c].number, c_format)
+            elif sorted_list[c].end_day < sorted_list[c].due_date:
+                ws.write(row + c, column, sorted_list[c].number, c_format_before_dd)
+            else:
+                ws.write(row + c, column, sorted_list[c].number, tolerance_used_format)
 
         row += 3
         for c in range(len(day.a_checks)):  # paint a_checks
-            ws.write(row, column, day.a_checks[c].number, a_format)
+            if day.a_checks[c].end_day == day.a_checks[c].due_date:
+                ws.write(row, column, day.a_checks[c].number, a_format)
+            elif day.a_checks[c].end_day < day.a_checks[c].due_date:
+                ws.write(row, column, day.a_checks[c].number, a_format_before_dd)
+            else:
+                ws.write(row, column, day.a_checks[c].number, tolerance_used_format)
 
         if d % 50 != 0 or d == 0:  # don't change line
             column += 1
@@ -86,8 +104,8 @@ def render_calendar_excel(env, name):
     column = 0
     for t in env.task_list:
         info.write(row, column, t.number)
-        if t.starting_day != -1:
-            diff = (t.due_date - t.starting_day).days
+        if t.end_day != -1:
+            diff = (t.due_date - t.end_day).days
             if diff < 0:
                 info.write(row, column + 1, diff, tolerance_used_format)
             elif t.type == "c-check":
@@ -116,11 +134,11 @@ def render_results_excel(agent, mean_rewards, max_reward, episode_conflicts, bes
     worksheet.write_row(0, 0, mean_rewards)
     hyper_strings = ["n.layers", "layer1", "layer2", "layer3", "activation", "initializer",
                      "output activation", "optimizer", "gamma", "buffer_size", "batch_size", "target_update",
-                     "learning rate", "max episodes"]
+                     "learning rate", "max frames"]
     hyper_values = [n_layers, layer1nodes, layer2nodes, layer3nodes, activation_function,
                     "tf.contrib.layers.variance_scaling_initializer()",
                     "None", "adam", agent.gamma, agent.buffer_size, agent.batch_size, agent.target_update_freq,
-                    agent.learning_rate, agent.max_episodes]
+                    agent.learning_rate, agent.max_frames]
     worksheet.write_row(2, 0, hyper_strings)
     worksheet.write_row(3, 0, hyper_values)
 
@@ -208,6 +226,18 @@ def maintenance_plan_json(env):
         f.write(j)
 
 
+# verify if all scheduled tasks have proper spacing
+def verify_task_due_dates(tasks):
+    for i in range(len(tasks)):
+        for j in range(i+1, len(tasks)):
+            if tasks[i].tail_number == tasks[j].tail_number and tasks[i].type == tasks[j].type:
+                if date_to_day(tasks[j].due_date) != date_to_day(tasks[i].end_day) + tasks[i].interval:
+                    print("Error:")
+                    print("Task id: ", tasks[i].id,", end day: ", date_to_day(tasks[i].end_day), ", interval: ", tasks[i].interval)
+                    print("Task id: ", tasks[j].id,", due date: ", date_to_day(tasks[j].due_date))
+                break
+
+
 # finds if the tasks with the same due date were scheduled properly, i.e, if the tasks with
 # higher priority were scheduled first
 def evaluate_priorities():
@@ -236,3 +266,4 @@ def evaluate_priorities():
 
 
 # evaluate_priorities()
+
