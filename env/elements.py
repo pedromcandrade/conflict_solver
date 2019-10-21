@@ -67,7 +67,8 @@ class Aircraft:
     def __init__(self, fleet, tail_number):
         self.fleet = fleet
         self.tail_number = tail_number
-        self.tasks = []
+        self.c_checks = []
+        self.a_checks = []
 
 
 class Conflict:

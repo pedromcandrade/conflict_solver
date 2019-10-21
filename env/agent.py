@@ -83,6 +83,11 @@ class Agent:
             # In this loop the replay buffer will be pre-populated with
             # experiences by performing random actions
             for i in range(self.buffer_start):
+                #print("Agent:")
+                #print(self.env.last_scheduled)
+                #print(self.env.task_list[self.env.last_scheduled].scheduled)
+                #print(len(self.env.conflicts))
+                #print("...")
                 if i % 100 == 0:
                     print("Filling Buffer... ", (i * 100) / self.buffer_start, "%")
 
@@ -118,6 +123,7 @@ class Agent:
 
                 sum_rewards = 0
                 for step in range(self.max_steps):
+                    # print(self.env.last_scheduled)
                     action = self.action_getter.get_best_action(
                         sess,
                         frame,
@@ -237,7 +243,6 @@ plot2 = None
 
 if __name__ == '__main__':
     tf.enable_eager_execution()
-
     dqn_agent = Agent("Seaquest-v0",
                       gamma=0.9,
                       buffer_size=10000,
@@ -246,13 +251,12 @@ if __name__ == '__main__':
                       target_update_freq=10000,
                       update_freq=4,
                       learning_rate=0.00025,
-                      max_frames=5000,
+                      max_frames=100000,
                       max_steps=200000000,
                       exp_init=1.0,
                       exp_final=0.05,
-                      exp_final_frame=5000)
+                      exp_final_frame=90000)
     dqn_agent.train()
-
 
     plot1 = dqn_agent.plot1
     plot2 = dqn_agent.plot2
@@ -265,6 +269,7 @@ if __name__ == '__main__':
     plt.ylabel('Reward', fontsize=20)
 
     plt.plot(plot2, color='#ee9b0b')
+
 
     plt.show()
     print("Max", max(plot2))
