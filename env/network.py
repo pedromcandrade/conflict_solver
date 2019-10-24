@@ -74,16 +74,14 @@ class DQNetwork:
                                                         scope="asd2"
                                                         )
 
-        self.Q = tf.reduce_sum(tf.multiply(self.output,
-                                           tf.one_hot(self.actions,
-                                                      self.action_size)),
-                               axis=1)
+        self.Q = tf.reduce_sum(tf.multiply(self.output, tf.one_hot(self.actions, self.action_size)), axis=1)
 
         self.best_action = np.argmax(self.output)
 
         self.loss = tf.reduce_mean(tf.square(self.target_Q - self.Q))
-
-        self.optimizer = tf.train.AdamOptimizer(self.learning_rate, epsilon=0.1)
+        # self.loss = tf.losses.mean_squared_error(self.Q, self.target_Q)
+        self.optimizer = tf.train.AdamOptimizer(self.learning_rate)
+        # self.optimizer = tf.train.AdamOptimizer(self.learning_rate, epsilon=0.1)
         # self.optimizer = tf.train.RMSPropOptimizer(0.00025, 0.99, 0.0, 1e-3)
         self.update = self.optimizer.minimize(self.loss)
 

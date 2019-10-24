@@ -8,6 +8,9 @@ class Day:
         self.c_checks = []
         self.a_checks = []
 
+        self.a_check_available = True
+        self.c_check_available = True
+
 
 class Hangar:
     def __init__(self, n_days, n_tasks):

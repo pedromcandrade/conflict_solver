@@ -52,6 +52,7 @@ class ActionGetter:
 
         return self.action
 
+
 class FrameStacker:
     def __init__(self, stack_size=4, frame_width=84, frame_height=84):
         self.stack_size = stack_size

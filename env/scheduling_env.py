@@ -7,6 +7,8 @@ from env.utils import *
 from env.elements import *
 from env.dispatching_rules import *
 import math
+import pandas as pd
+import datetime
 
 MAX_PRIORITY = 1
 
@@ -40,12 +42,8 @@ class SchedulingEnv(gym.Env):
         self.last_c_days = [task[4] for task in self.c_initial]
         self.last_elapsed_index = np.zeros(len(self.c_initial))
         self.last_a_days = [task[4] for task in self.a_initial]
-        # Calendar
-        today_date = date.today()
-        self.calendar = []
-        for i in range(self.n_days):
-            self.calendar.append(Day(today_date + timedelta(days=i)))
 
+        self.calendar = []
         self.aircraft = []
         self.task_list = []
         self.conflicts = deque()
@@ -59,9 +57,10 @@ class SchedulingEnv(gym.Env):
 
         self.more_tasks = False
 
+        self.init_calendar()
         self.init_aircraft()
-        self.create_tasks_v2()
-        #random.shuffle(self.task_list)
+        self.create_tasks()
+
         build_input_json(self.task_list)
 
         self.backup = copy.deepcopy(self.task_list)
@@ -81,7 +80,6 @@ class SchedulingEnv(gym.Env):
                     self.c_tasks_before += 1
                 else:
                     self.a_tasks_before += 1
-
             else:
                 reward -= 10 * (starting_day - due_day) * math.pow(MAX_PRIORITY - task.priority + 1, 2)
                 if task.type == "c-check":
@@ -126,10 +124,8 @@ class SchedulingEnv(gym.Env):
         self.last_a_days = [task[4] for task in self.a_initial]
 
         # Calendar
-        today_date = date.today()
         self.calendar = []
-        for i in range(self.n_days):
-            self.calendar.append(Day(today_date + timedelta(days=i)))
+        self.init_calendar()
 
         if not self.conflicts:  # if there are no conflicts
             # schedules every task (starting in task 0) to its due date until it finds one conflict
@@ -173,7 +169,7 @@ class SchedulingEnv(gym.Env):
         else:
             move = slf(conflict.tasks)
 
-        self.move_maintenance(move)
+        self.solve_conflict(move)
 
         if not self.conflicts:  # if there are no conflicts
             # schedules every task (starting in task 0) to its due date until it finds one conflict
@@ -197,26 +193,26 @@ class SchedulingEnv(gym.Env):
         else:
             self.build_state()
 
-        reward = self.calculate_rewards(conflict.tasks)
+        reward = calculate_rewards(conflict.tasks)
 
         return self.state, reward, self.done, {}
 
     def schedule_maintenance(self, task, move=False):
         self.more_tasks = True
 
-        if move:
-            diff = date_to_day(task.starting_day)
-        else:
-            diff = date_to_day(task.due_date)
+        if not move:
             task.starting_day = task.due_date
             task.end_day = task.starting_day + timedelta(task.length - 1)
-            task.scheduled = True
+
+        task.scheduled = True
+
+        # verify if the task can be scheduled to these days (due to possible restrictions)
+        task = self.verify_availability(task)
 
         t_type = task.type
-
         if t_type == "a-check":
-            self.calendar[diff].a_checks.append(task)
-
+            for i in range(date_to_day(task.starting_day), date_to_day(task.end_day) + 1):
+                self.calendar[i].a_checks.append(task)
         elif t_type == "c-check":  # Schedule c-check in the several days
             for i in range(date_to_day(task.starting_day), date_to_day(task.end_day) + 1):
                 self.calendar[i].c_checks.append(task)
@@ -238,7 +234,8 @@ class SchedulingEnv(gym.Env):
                 else:
                     break
 
-    def move_maintenance(self, task):
+    # choose the best day to move a maintenance in case there is a conflict
+    def solve_conflict(self, task):
         self.delete_conflicts(task)  # delete conflicts with this task
 
         # Find new day
@@ -257,7 +254,8 @@ class SchedulingEnv(gym.Env):
                 # enters here only if the task could not be scheduled before its due date
                 task.up = True
                 new_day = task.starting_day + timedelta(1)
-                if new_day < task.due_date + timedelta(task.tolerance) and new_day + task.length < day_to_date(self.n_days):
+                if new_day < task.due_date + timedelta(task.tolerance) and new_day + task.length < day_to_date(
+                        self.n_days):
                     task.starting_day = new_day
                     task.end_day = task.starting_day + timedelta(task.length - 1)
                 else:
@@ -273,14 +271,15 @@ class SchedulingEnv(gym.Env):
                 # enters here only if the task could not be scheduled before its due date
                 task.up = True
                 new_day = self.find_c_tolerance(task)
-                if new_day < task.due_date + timedelta(task.tolerance) and new_day + task.length < day_to_date(self.n_days):
+                if new_day < task.due_date + timedelta(task.tolerance) and new_day + task.length < day_to_date(
+                        self.n_days):
                     task.starting_day = new_day
                     task.end_day = task.starting_day + timedelta(task.length - 1)
                 else:
                     print("not found:", task.number, date_to_day(task.due_date))
                     found = False
 
-        #self.delete_from_calendar(task)
+        # self.delete_from_calendar(task)
 
         if task.type == "a-check":  # Erase task from calendar
             for d in range(previous_start_day, previous_end_day + 1):
@@ -316,6 +315,26 @@ class SchedulingEnv(gym.Env):
             if not self.task_list[index].scheduled:
                 return index
         return -1
+
+    # verify if the task can be scheduled to its date (due to possible restrictions)
+    # returns different starting and end dates if it can't
+    # the new dates correspond to the closest available slot to the left if available, if not it uses the tolerance
+    def verify_availability(self, task):
+        # verify if work is interrupted in any day of the task
+        available = True
+        for i in range(date_to_day(task.starting_day), date_to_day(task.end_day) + 1):
+            if not self.calendar[i].a_check_available and task.type == "a-check":
+                available = False
+                break
+            elif not self.calendar[i].c_check_available and task.type == "c-check":
+                available = False
+                break
+        if available:
+            return task
+        else:
+            task.starting_day = self.get_closest_available_day(task)
+            task.end_day = task.starting_day + timedelta(task.length - 1)
+            return task
 
     def delete_from_calendar(self, task):
         if task.starting_day != -1 and task.end_day != -1:
@@ -370,7 +389,7 @@ class SchedulingEnv(gym.Env):
                 if len(checking_day.c_checks) > 3:
                     for t in checking_day.c_checks:
                         # if the task is not in the conflict already, add it
-                        if self.check_containts(t, new_conf.tasks) == -1:
+                        if check_contains(t, new_conf.tasks) == -1:
                             new_conf.tasks.append(t)
             if len(new_conf.tasks) > 3:
                 self.conflicts.append(new_conf)
@@ -401,55 +420,53 @@ class SchedulingEnv(gym.Env):
                 return day_to_date(d)
         return -1
 
-    def simulate_move(self, task, task_list):
-        new_day = None
-        # Find new day
-        if task.type == "a-check":
-            new_day = task.starting_day - timedelta(1)
-
-            if date_to_day(new_day) >= self.a_length and not task.up:
-                new_day = task.starting_day - timedelta(1)
-
+    # finds the closest day to schedule a task that meets the restrictions
+    # if the task is a c-check the work is interrupted in a period of time (no less then 7 days straight), meaning
+    # that the maintenance is moved to the left of that period (if available) to prevent the aircraft being
+    # unavailable for larger periods of time
+    def get_closest_available_day(self, task):
+        found = False
+        scheduled_after = False   # becomes True if the task cannot be scheduled before the due date
+        day_before = date_to_day(task.starting_day)
+        day_after = date_to_day(task.starting_day)
+        new_day = date_to_day(task.starting_day)
+        while not found:
+            found = True
+            if not scheduled_after and day_before > 0:
+                day_before = day_before - 1
+                new_day = day_before
             else:
-                new_day = task.starting_day + timedelta(1)
-                if new_day < task.due_date + timedelta(task.tolerance) and new_day + task.length < day_to_date(self.n_days):
-                    new_day = task.starting_day + timedelta(1)
-                else:
-                    new_day = date.today() - timedelta(50)
+                day_after = day_after + 1
+                new_day = day_after
+                scheduled_after = True
 
-        elif task.type == "c-check":
-            new_day = self.find_c_day(task)
+            for i in range(new_day, new_day + task.length):
+                if not self.calendar[i].a_check_available and task.type == "a-check":
+                    found = False
+                    break
+                if not self.calendar[i].c_check_available and task.type == "c-check":
+                    found = False
+                    break
 
-            if date_to_day(new_day) >= task.length and not task.up:
-                new_day = self.find_c_day(task)
-
-            else:
-                new_day = self.find_c_tolerance(task)
-                if new_day < task.due_date + timedelta(task.tolerance) and new_day + task.length < day_to_date(self.n_days):
-                    new_day = self.find_c_tolerance(task)
-                else:
-                    new_day = date.today() - timedelta(50)
-
-        reward = 0
-        for t in task_list:
-            if t.id != task.id:
-                day = date_to_day(t.starting_day)
-            else:
-                day = date_to_day(new_day)
-
-            due_date = date_to_day(t.due_date)
-
-            if day <= due_date:
-                reward -= due_date - day
-            else:
-                reward -= 5 * (day - due_date)
-
-        return reward
+        return day_to_date(new_day)
 
     def init_aircraft(self):
         self.aircraft = []
         for a in range(len(self.c_initial)):
             self.aircraft.append(Aircraft(self.c_initial[a][0], self.c_initial[a][1]))
+
+    def init_calendar(self):
+        # get day restrictions
+        a_check_restrictions = [pd.to_datetime(d[0]).date() for d in self.a_not_allowed]
+        c_check_restrictions = [[pd.to_datetime(d[0]).date(), pd.to_datetime(d[1]).date()] for d in self.c_not_allowed]
+        for i in range(self.n_days):
+            day = Day(START_DATE + timedelta(days=i))
+            if START_DATE + timedelta(i) in a_check_restrictions:
+                day.a_check_available = False
+            for interval in c_check_restrictions:
+                if interval[0] <= START_DATE + timedelta(i) <= interval[1]:
+                    day.c_check_available = False
+            self.calendar.append(day)
 
     def create_tasks(self):
         self.task_list = []
@@ -475,7 +492,7 @@ class SchedulingEnv(gym.Env):
                                 task_info[10], task_info[4], task_number, task_info[0], task_info[1], task_priority)
                 if first:
                     new_task.prev_check = - new_task.prev_check
-                    new_task.due_date = (date.today() + timedelta(new_task.interval + new_task.prev_check))
+                    new_task.due_date = (START_DATE + timedelta(new_task.interval + new_task.prev_check))
                     new_task.starting_day = new_task.due_date
                     new_task.end_day = new_task.starting_day + timedelta(new_task.length - 1)
                     first = False
@@ -495,8 +512,9 @@ class SchedulingEnv(gym.Env):
                 # If due date is less than the number of days the task is valid
                 if date_to_day(new_task.end_day) < self.n_days:
                     self.task_list.append(new_task)  # add new task to the global task list
-                    if not self.check_aircraft(self.aircraft[index], new_task):
-                        self.aircraft[index].c_checks.append(new_task)  # add new task to the respective aircraft task list
+                    if not check_aircraft(self.aircraft[index], new_task):
+                        self.aircraft[index].c_checks.append(
+                            new_task)  # add new task to the respective aircraft task list
                     c_checks += 1
                     task_number += 1
 
@@ -513,7 +531,7 @@ class SchedulingEnv(gym.Env):
                                 task_info[10], task_info[4], task_number, task_info[0], task_info[1], task_priority)
                 if first:
                     new_task.prev_check = - new_task.prev_check
-                    new_task.due_date = (date.today() + timedelta(new_task.interval + new_task.prev_check))
+                    new_task.due_date = (START_DATE + timedelta(new_task.interval + new_task.prev_check))
                     new_task.starting_day = new_task.due_date
                     new_task.end_day = new_task.starting_day + timedelta(new_task.length - 1)
                     first = False
@@ -533,8 +551,9 @@ class SchedulingEnv(gym.Env):
                 # If due date is less than the number of days
                 if date_to_day(new_task.end_day) < self.n_days:
                     self.task_list.append(new_task)  # add new task to the global task list
-                    if not self.check_aircraft(self.aircraft[index], new_task):
-                        self.aircraft[index].a_checks.append(new_task)  # add new task to the respective aircraft task list
+                    if not check_aircraft(self.aircraft[index], new_task):
+                        self.aircraft[index].a_checks.append(
+                            new_task)  # add new task to the respective aircraft task list
 
                     a_checks += 1
                     task_number += 1
@@ -568,7 +587,7 @@ class SchedulingEnv(gym.Env):
 
                     if index == 0:
                         new_task.prev_check = - new_task.prev_check
-                        new_task.due_date = (date.today() + timedelta(new_task.interval + new_task.prev_check))
+                        new_task.due_date = (START_DATE + timedelta(new_task.interval + new_task.prev_check))
                         new_task.starting_day = new_task.due_date
                         new_task.end_day = new_task.starting_day + timedelta(new_task.length - 1)
                     else:
@@ -587,7 +606,7 @@ class SchedulingEnv(gym.Env):
                     # If due date is less than the number of days
                     if date_to_day(new_task.end_day) < self.n_days:
                         self.task_list.append(new_task)
-                        if not self.check_aircraft(self.aircraft[t], new_task):
+                        if not check_aircraft(self.aircraft[t], new_task):
                             self.aircraft[t].c_checks.append(new_task)  # add new task to the aircraft task list
                         c_checks += 1
                         more_tasks = True
@@ -605,7 +624,7 @@ class SchedulingEnv(gym.Env):
 
                 if index == 0:
                     new_task.prev_check = - new_task.prev_check
-                    new_task.due_date = (date.today() + timedelta(new_task.interval + new_task.prev_check))
+                    new_task.due_date = (START_DATE + timedelta(new_task.interval + new_task.prev_check))
                     new_task.starting_day = new_task.due_date
                     new_task.end_day = new_task.starting_day + timedelta(new_task.length - 1)
                 else:
@@ -624,7 +643,7 @@ class SchedulingEnv(gym.Env):
                 # If due date is less than the number of days
                 if date_to_day(new_task.end_day) < self.n_days:
                     self.task_list.append(new_task)
-                    if not self.check_aircraft(self.aircraft[t], new_task):
+                    if not check_aircraft(self.aircraft[t], new_task):
                         self.aircraft[t].a_checks.append(new_task)  # add new task to the respective aircraft task list
                     a_checks += 1
                     more_tasks = True
@@ -683,14 +702,14 @@ class SchedulingEnv(gym.Env):
                 checks = sorted(day.c_checks, key=lambda x: x.number)
                 for t in range(len(checks)):
                     task = checks[t]
-                    index = self.check_containts(task, conf_tasks)
+                    index = check_contains(task, conf_tasks)
                     if index != -1:
                         self.state[index][diff] = 2
             elif conf_tasks[0].type == "a-check":
                 checks = sorted(day.a_checks, key=lambda x: x.number)
                 for t in range(len(checks)):
                     task = checks[t]
-                    index = self.check_containts(task, conf_tasks)
+                    index = check_contains(task, conf_tasks)
                     if index != -1:
                         self.state[index][diff] = 2
             diff += 1
@@ -702,12 +721,12 @@ class SchedulingEnv(gym.Env):
             day = self.calendar[d]
             if conf_tasks[0].type == "c-check":
                 for t in day.c_checks:
-                    if self.check_containts(t, conf_tasks) == -1:
+                    if check_contains(t, conf_tasks) == -1:
                         self.state[array_index][diff] += 1
 
             elif conf_tasks[0].type == "a-check":
                 for t in day.a_checks:
-                    if self.check_containts(t, conf_tasks) == -1:
+                    if check_contains(t, conf_tasks) == -1:
                         self.state[array_index][diff] += 1
             diff += 1
         """
@@ -724,60 +743,57 @@ class SchedulingEnv(gym.Env):
         # np.set_printoptions(threshold=sys.maxsize)
         # print(self.state)
 
-    def check_containts(self, task, array):
-        for i in range(len(array)):
-            t = array[i]
-            if t.id == task.id:
-                return i
-        return -1
-
-    def check_aircraft(self, aircraft, task):
-        if task.type == "a-check":
-            for t in aircraft.a_checks:
-                if task.id == t.id:
-                    return True
-            return False
-        else:
-            for t in aircraft.c_checks:
-                if task.id == t.id:
-                    return True
-            return False
-
-    def calculate_rewards(self, tasks):
-        reward = 0
-
-        for task in tasks:
-            start_day = date_to_day(task.starting_day)
-            due_date = date_to_day(task.due_date)
-
-            if start_day == -1:
-                reward -= 100
-            elif start_day <= due_date:
-                reward -= (due_date - start_day) * math.pow(MAX_PRIORITY - task.priority + 1, 2)
-            else:
-                reward -= 10 * (start_day - due_date) * math.pow(MAX_PRIORITY - task.priority + 1, 2)
-        return reward
-
     def render(self, mode='human'):
         pass
 
 
+def check_aircraft(aircraft, task):
+    if task.type == "a-check":
+        for t in aircraft.a_checks:
+            if task.id == t.id:
+                return True
+        return False
+    else:
+        for t in aircraft.c_checks:
+            if task.id == t.id:
+                return True
+        return False
+
+
+# checks if the check can be done at a certain day
+def check_day_availability(day, task):
+    if day.c_check_available == False and day.a_check_available == False:
+        return False
+    if day.a_check_available == False and task.type == "a-check":
+        return False
+    if day.c_check_available == False and task.type == "c-check":
+        return False
+    return True
+
+
+def calculate_rewards(tasks):
+    reward = 0
+
+    for task in tasks:
+        start_day = date_to_day(task.starting_day)
+        due_date = date_to_day(task.due_date)
+
+        if start_day == -1:
+            reward -= 100
+        elif start_day <= due_date:
+            reward -= (due_date - start_day) * math.pow(MAX_PRIORITY - task.priority + 1, 2)
+        else:
+            reward -= 10 * (start_day - due_date) * math.pow(MAX_PRIORITY - task.priority + 1, 2)
+    return reward
+
+
+def check_contains(task, array):
+    for i in range(len(array)):
+        t = array[i]
+        if t.id == task.id:
+            return i
+    return -1
+
+
 if __name__ == '__main__':
     e = SchedulingEnv()
-    e.reset()
-    e.create_tasks()
-    tasks = e.task_list
-    e.reset()
-    e.create_tasks_v2()
-    tasks2 = e.task_list
-
-    for t in tasks:
-        for t2 in tasks2:
-            if t.id == t2.id:
-                if t.due_date != t2.due_date or t.starting_day != t2.starting_day or t.end_day != t2.end_day:
-                    print(t.id)
-                    print(t.due_date, "--", t2.due_date)
-                    print(t.starting_day, "--", t2.starting_day)
-                    print(t.end_day, "--", t2.end_day)
-
-

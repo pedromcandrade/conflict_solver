@@ -4,14 +4,15 @@ import simplejson as json
 from datetime import *
 from env.network import *
 
+START_DATE = date(2019, 1, 1)
 
 def date_to_day(d):
-    day = (d - date.today()).days
+    day = (d - START_DATE).days
     return day
 
 
 def day_to_date(day):
-    return date.today() + timedelta(day)
+    return START_DATE + timedelta(day)
 
 
 def xlxs_to_matrix(filename):
@@ -38,59 +39,84 @@ def file_to_info(filename):
 
     return info
 
+
 def render_calendar_excel(env, name):
     # print(env.reward_calendar())
     workbook = xlsxwriter.Workbook(name)
     ws = workbook.add_worksheet()
     info = workbook.add_worksheet()
 
+    date_format = workbook.add_format()
+    date_format.set_pattern(1)
+    date_format.set_bg_color('#333333') # dark gray
+    date_format.set_font_color('white')
+    date_format.set_bold()
+
     c_format = workbook.add_format()
     c_format.set_pattern(1)
-    c_format.set_bg_color('#008000') #green
+    c_format.set_bg_color('#00a000') #green
 
     c_format_before_dd = workbook.add_format()
     c_format_before_dd.set_pattern(1)
-    c_format_before_dd.set_bg_color("#7CFC00") #light green
+    c_format_before_dd.set_bg_color("#00ff00") #light green
 
     a_format = workbook.add_format()
     a_format.set_pattern(1)
-    a_format.set_bg_color('#0000FF') #blue
+    a_format.set_bg_color('#1e90ff') #blue
 
     a_format_before_dd = workbook.add_format()
     a_format_before_dd.set_pattern(1)
-    a_format_before_dd.set_bg_color("#87CEFA") #light blue
+    a_format_before_dd.set_bg_color("#87cfeb") #light blue
 
     tolerance_used_format = workbook.add_format()
     tolerance_used_format.set_pattern(1)
     tolerance_used_format.set_bg_color('red')
+
+    no_check_format = workbook.add_format()
+    no_check_format.set_pattern(1)
+    no_check_format.set_bg_color("#c0c0c0") #light gray
 
     row = 0
     column = 0
     for d in range(len(env.calendar)):
         day = env.calendar[d]
 
-        ws.write(row, column, str(day.date)) # write date
+        ws.write(row, column, str(day.date), date_format)  # write date
+
+        if not day.c_check_available:
+            ws.write(row + 1, column, '', no_check_format)
+            ws.write(row + 2, column, '', no_check_format)
+            ws.write(row + 3, column, '', no_check_format)
+
         # ws.write(row, column, date_to_day(day.date))
         row += 1
 
         sorted_list = sorted(day.c_checks, key=lambda x: x.number)
 
         for c in range(len(sorted_list)):  # paint c_checks
-            if sorted_list[c].starting_day == sorted_list[c].due_date:
-                ws.write(row + c, column, sorted_list[c].number, c_format)
-            elif sorted_list[c].starting_day < sorted_list[c].due_date:
-                ws.write(row + c, column, sorted_list[c].number, c_format_before_dd)
+            if not day.c_check_available:
+                ws.write(row + c, column, sorted_list[c].number, no_check_format)
             else:
-                ws.write(row + c, column, sorted_list[c].number, tolerance_used_format)
+                if sorted_list[c].starting_day == sorted_list[c].due_date:
+                    ws.write(row + c, column, sorted_list[c].number, c_format)
+                elif sorted_list[c].starting_day < sorted_list[c].due_date:
+                    ws.write(row + c, column, sorted_list[c].number, c_format_before_dd)
+                else:
+                    ws.write(row + c, column, sorted_list[c].number, tolerance_used_format)
 
         row += 3
+        if not day.a_check_available:
+            ws.write(row, column, '', no_check_format)
         for c in range(len(day.a_checks)):  # paint a_checks
-            if day.a_checks[c].starting_day == day.a_checks[c].due_date:
-                ws.write(row, column, day.a_checks[c].number, a_format)
-            elif day.a_checks[c].starting_day < day.a_checks[c].due_date:
-                ws.write(row, column, day.a_checks[c].number, a_format_before_dd)
+            if not day.a_check_available:
+                ws.write(row, column, day.a_checks[c].number, no_check_format)
             else:
-                ws.write(row, column, day.a_checks[c].number, tolerance_used_format)
+                if day.a_checks[c].starting_day == day.a_checks[c].due_date:
+                    ws.write(row, column, day.a_checks[c].number, a_format)
+                elif day.a_checks[c].starting_day < day.a_checks[c].due_date:
+                    ws.write(row, column, day.a_checks[c].number, a_format_before_dd)
+                else:
+                    ws.write(row, column, day.a_checks[c].number, tolerance_used_format)
 
         if d % 50 != 0 or d == 0:  # don't change line
             column += 1
@@ -98,6 +124,8 @@ def render_calendar_excel(env, name):
         else:  # change line
             row += 1
             column = 0
+
+    ws.set_column('A:AZ', 10)
 
     row = 0
     column = 0
@@ -128,95 +156,6 @@ def render_calendar_excel(env, name):
 
     workbook.close()
 
-def render_calendar_excel(env, name):
-    # print(env.reward_calendar())
-    workbook = xlsxwriter.Workbook(name)
-    ws = workbook.add_worksheet()
-    info = workbook.add_worksheet()
-
-    c_format = workbook.add_format()
-    c_format.set_pattern(1)
-    c_format.set_bg_color('#008000') #green
-
-    c_format_before_dd = workbook.add_format()
-    c_format_before_dd.set_pattern(1)
-    c_format_before_dd.set_bg_color("#7CFC00") #light green
-
-    a_format = workbook.add_format()
-    a_format.set_pattern(1)
-    a_format.set_bg_color('#0000FF') #blue
-
-    a_format_before_dd = workbook.add_format()
-    a_format_before_dd.set_pattern(1)
-    a_format_before_dd.set_bg_color("#87CEFA") #light blue
-
-    tolerance_used_format = workbook.add_format()
-    tolerance_used_format.set_pattern(1)
-    tolerance_used_format.set_bg_color('red')
-
-    row = 0
-    column = 0
-    for d in range(len(env.calendar)):
-        day = env.calendar[d]
-
-        ws.write(row, column, str(day.date)) # write date
-        # ws.write(row, column, date_to_day(day.date))
-        row += 1
-
-        sorted_list = sorted(day.c_checks, key=lambda x: x.number)
-
-        for c in range(len(sorted_list)):  # paint c_checks
-            if sorted_list[c].starting_day == sorted_list[c].due_date:
-                ws.write(row + c, column, sorted_list[c].number, c_format)
-            elif sorted_list[c].starting_day < sorted_list[c].due_date:
-                ws.write(row + c, column, sorted_list[c].number, c_format_before_dd)
-            else:
-                ws.write(row + c, column, sorted_list[c].number, tolerance_used_format)
-
-        row += 3
-        for c in range(len(day.a_checks)):  # paint a_checks
-            if day.a_checks[c].starting_day == day.a_checks[c].due_date:
-                ws.write(row, column, day.a_checks[c].number, a_format)
-            elif day.a_checks[c].starting_day < day.a_checks[c].due_date:
-                ws.write(row, column, day.a_checks[c].number, a_format_before_dd)
-            else:
-                ws.write(row, column, day.a_checks[c].number, tolerance_used_format)
-
-        if d % 50 != 0 or d == 0:  # don't change line
-            column += 1
-            row -= 4
-        else:  # change line
-            row += 1
-            column = 0
-
-    row = 0
-    column = 0
-    for t in env.task_list:
-        info.write(row, column, t.number)
-        if t.starting_day != -1:
-            diff = (t.due_date - t.starting_day).days
-            if diff < 0:
-                info.write(row, column + 1, diff, tolerance_used_format)
-            elif t.type == "c-check" and diff > 0:
-                info.write(row, column + 1, diff, c_format_before_dd)
-            elif t.type == "a-check" and diff > 0:
-                info.write(row, column + 1, diff, a_format_before_dd)
-            elif t.type == "c-check" and diff == 0:
-                info.write(row, column + 1, diff, c_format)
-            else:
-                info.write(row, column + 1, diff, a_format)
-        else:
-            info.write(row, column + 1, "Not Found")
-
-        # info.write(row, column + 2, t.type)
-
-        if t.number % 30 != 0 or t.number == 0:  # dont change line
-            column += 2
-        else:
-            row += 1
-            column = 0
-
-    workbook.close()
 
 def render_results_excel(agent, mean_rewards, max_reward, episode_conflicts, best_episode_conflicts, c_before,
                          c_after, a_before, a_after):
@@ -328,6 +267,19 @@ def verify_task_due_dates(tasks):
                     print("Task id: ", tasks[i].id,", end day: ", date_to_day(tasks[i].end_day), ", interval: ", tasks[i].interval)
                     print("Task id: ", tasks[j].id,", due date: ", date_to_day(tasks[j].due_date))
                 break
+
+
+# finds if an a-check could be scheduled in a later slot before its due date (considering all tasks have equal priority)
+def evaluate_calendar(tasks, calendar):
+    count = 0
+    for task in tasks:
+        if task.starting_day < task.due_date:
+            for i in range(date_to_day(task.starting_day), date_to_day(task.due_date) + 1):
+                if task.type == "a-check":
+                    if calendar[i].a_check_available and len(calendar[i].a_checks) < 1:
+                        count += 1
+                        print("Task ", task.number, " not optimal. Available day: ", calendar[i].date)
+    print("Total number of sub-optimal tasks: ", count)
 
 
 # finds if the tasks with the same due date were scheduled properly, i.e, if the tasks with

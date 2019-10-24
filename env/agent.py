@@ -79,15 +79,11 @@ class Agent:
             # TODO: restore previous session
 
             state = self.env.reset()
+            reset = state
 
             # In this loop the replay buffer will be pre-populated with
             # experiences by performing random actions
             for i in range(self.buffer_start):
-                #print("Agent:")
-                #print(self.env.last_scheduled)
-                #print(self.env.task_list[self.env.last_scheduled].scheduled)
-                #print(len(self.env.conflicts))
-                #print("...")
                 if i % 100 == 0:
                     print("Filling Buffer... ", (i * 100) / self.buffer_start, "%")
 
@@ -118,12 +114,14 @@ class Agent:
             c_after = 0
             a_before = 0
             a_after = 0
+            episodes = 0
             while frame < self.max_frames:
                 state = self.env.reset()
-
+                episodes += 1
                 sum_rewards = 0
                 for step in range(self.max_steps):
                     # print(self.env.last_scheduled)
+                    state = self.env.state
                     action = self.action_getter.get_best_action(
                         sess,
                         frame,
@@ -225,6 +223,7 @@ class Agent:
 
             print("Number of conflicts in best episode: ", best_episode_conflicts)
             print("Mean number of conflicts: ", sum(episode_conflicts) / len(episode_conflicts))
+            print("Episodes: ", episodes)
 
             self.plot2 = self.mean_rewards
 
@@ -243,33 +242,44 @@ plot2 = None
 
 if __name__ == '__main__':
     tf.enable_eager_execution()
-    dqn_agent = Agent("Seaquest-v0",
-                      gamma=0.9,
-                      buffer_size=10000,
-                      batch_size=32,
-                      buffer_start=10000,
-                      target_update_freq=10000,
-                      update_freq=4,
-                      learning_rate=0.00025,
-                      max_frames=100000,
-                      max_steps=200000000,
-                      exp_init=1.0,
-                      exp_final=0.05,
-                      exp_final_frame=90000)
-    dqn_agent.train()
+    with open("results//results.txt", "w+") as f:
+        for i in range(1):
+            dqn_agent = Agent("Seaquest-v0",
+                              gamma=0.9,
+                              buffer_size=20000,
+                              batch_size=32,
+                              buffer_start=10000,
+                              target_update_freq=10000,
+                              update_freq=4,
+                              learning_rate=0.00025,
+                              max_frames=10000,
+                              max_steps=200000000,
+                              exp_init=1.0,
+                              exp_final=0.05,
+                              exp_final_frame=2000)
 
-    plot1 = dqn_agent.plot1
-    plot2 = dqn_agent.plot2
+            dqn_agent.train()
 
-    style.use('fivethirtyeight')
+            evaluate_calendar(dqn_agent.best_env.task_list, dqn_agent.best_env.calendar)
 
-    plt.figure(figsize=(8, 6))
+            plot1 = dqn_agent.plot1
+            plot2 = dqn_agent.plot2
 
-    plt.xlabel('Episode', fontsize=20)
-    plt.ylabel('Reward', fontsize=20)
+            style.use('fivethirtyeight')
 
-    plt.plot(plot2, color='#ee9b0b')
+            plt.figure(figsize=(8, 6))
+            plt.xlabel('Episode', fontsize=20)
+            plt.ylabel('Reward', fontsize=20)
 
+            plt.plot(plot2, color='#ee9b0b')
 
-    plt.show()
-    print("Max", max(plot2))
+            plt.savefig("results//plot"+str(i)+".png")
+            f.write("Task insertion order: Aircraft-based\n")
+            f.write("Max frames: "+str(dqn_agent.max_frames)+"\n")
+            f.write("Mean: "+str(dqn_agent.mean_rewards)+"\n")
+            f.write("Max: "+str(dqn_agent.max_reward))
+            f.write("\n\n")
+            render_calendar_excel(dqn_agent.best_env, "results//calendar"+str(i)+".xlsx")
+
+            #plt.show()
+            #print("Max", max(plot2))
