@@ -1,3 +1,5 @@
+
+from env.agent import *
 import numpy as np
 
 
@@ -43,14 +45,14 @@ class Hangar:
 
 
 class Task:
-    def __init__(self, id, type, length, interval, tolerance, prev_check, number, fleet, tail_number, priority):
+    def __init__(self, id, type, length, tolerance, dy_prev_check, fh_prev_check, fc_prev_check, number, fleet, tail_number, priority):
         self.id = id
         self.type = type
         self.length = length
-        self.interval = interval
         self.tolerance = tolerance
         self.number = number
-        self.prev_check = prev_check
+        self.initial_check_usage = {"DY": dy_prev_check, "FH": fh_prev_check, "FC": fc_prev_check}
+        self.prev_check = -1
 
         self.fleet = fleet
         self.tail_number = tail_number
@@ -60,18 +62,34 @@ class Task:
         self.end_day = -1
         self.hangar = -1
 
+        self.dy_due_date = -1
+        self.fh_due_date = -1
+        self.fc_due_date = -1
+
         self.scheduled = False
         self.priority = priority
+
+        self.dy_lost = 0
+        self.fh_lost = 0
+        self.fc_lost = 0
 
         self.up = False
 
 
 class Aircraft:
-    def __init__(self, fleet, tail_number):
+    def __init__(self, fleet, tail_number, a_check_interval_dy, a_check_interval_fh, a_check_interval_fc,
+                 c_check_interval_dy, c_check_interval_fh, c_check_interval_fc, dfh, dfc):
         self.fleet = fleet
         self.tail_number = tail_number
         self.c_checks = []
         self.a_checks = []
+        self.a_check_interval = {"FH": a_check_interval_fh, "FC": a_check_interval_fc, "DY": a_check_interval_dy}
+        self.c_check_interval = {"FH": c_check_interval_fh, "FC": c_check_interval_fc, "DY": c_check_interval_dy}
+        self.dfh = dfh
+        self.dfc = dfc
+        self.dy_lost = 0
+        self.fh_lost = 0
+        self.fc_lost = 0
 
 
 class Conflict:

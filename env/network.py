@@ -2,9 +2,9 @@
 # Network
 #
 
+from env.agent import *
 import tensorflow as tf
 import numpy as np
-
 
 layer1nodes = 400
 layer2nodes = 100
@@ -90,6 +90,9 @@ class DQNetwork:
             # tf.summary.histogram("input", self.input)
             # tf.summary.histogram("normalized", self.normalized)
             # tf.summary.histogram("ff1", self.ff1)
+            tf.summary.histogram("input", self.input)
+            tf.summary.histogram("layer1", self.ff1)
+            tf.summary.histogram("layer2", self.ff2)
             tf.summary.histogram("output", self.output)
             tf.summary.histogram("q-values", self.Q)
             self.summaries = tf.summary.merge_all()

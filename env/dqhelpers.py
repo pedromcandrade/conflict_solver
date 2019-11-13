@@ -2,11 +2,9 @@
 # DQN Helpers
 #
 
+from env.agent import *
 import numpy as np
 import random
-import tensorflow as tf
-
-from collections import deque
 
 
 class ActionGetter:

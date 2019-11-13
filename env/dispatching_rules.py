@@ -3,7 +3,8 @@
 # Shortest Length First: SLF
 # Longest Length First: LLF
 
-from env.utils import *
+from env.agent import *
+
 
 list_rules = ["EDD", "FCFS", "MUF"]
 

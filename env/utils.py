@@ -1,10 +1,13 @@
-import pandas as pd
-import xlsxwriter
+from env.agent import *
 import simplejson as json
+import xlsxwriter
+import pandas as pd
+import numpy as np
 from datetime import *
-from env.network import *
+
 
 START_DATE = date(2019, 1, 1)
+
 
 def date_to_day(d):
     day = (d - START_DATE).days
@@ -41,7 +44,6 @@ def file_to_info(filename):
 
 
 def render_calendar_excel(env, name):
-    # print(env.reward_calendar())
     workbook = xlsxwriter.Workbook(name)
     ws = workbook.add_worksheet()
     info = workbook.add_worksheet()
@@ -199,7 +201,8 @@ def create_json(env):
                 task_info = {"id": task.id, "number": task.number, "type": task.type, "priority": task.priority,
                              "due date": str(task.due_date), "length": task.length,
                              "starting day": str(task.starting_day), "end day": str(task.end_day),
-                             "aircraft": task.tail_number, "fleet": task.fleet}
+                             "aircraft": task.tail_number, "fleet": task.fleet,
+                             "DY_LOST": task.dy_lost, "FH_LOST": task.fh_lost, "FC_LOST": task.fc_lost}
                 task_list.append(task_info)
         d[aircraft] = task_list
 
@@ -223,7 +226,8 @@ def task_oriented_json(env):
     for task in sorted_tasks:
         task_info = {"number": task.number, "type": task.type, "due date": str(task.due_date), "priority": task.priority,
                      "length": task.length, "starting day": str(task.starting_day), "end day": str(task.end_day),
-                     "aircraft": task.tail_number, "fleet": task.fleet}
+                     "aircraft": task.tail_number, "fleet": task.fleet, "DY_LOST": task.dy_lost, "FH_LOST": task.fh_lost,
+                     "FC_LOST": task.fc_lost}
         d[task.id] = task_info
 
     j = json.dumps(d, indent=4)
@@ -257,28 +261,19 @@ def maintenance_plan_json(env):
         f.write(j)
 
 
-# verify if all scheduled tasks have proper spacing
-def verify_task_due_dates(tasks):
-    for i in range(len(tasks)):
-        for j in range(i+1, len(tasks)):
-            if tasks[i].tail_number == tasks[j].tail_number and tasks[i].type == tasks[j].type:
-                if date_to_day(tasks[j].due_date) != date_to_day(tasks[i].end_day) + tasks[i].interval:
-                    print("Error:")
-                    print("Task id: ", tasks[i].id,", end day: ", date_to_day(tasks[i].end_day), ", interval: ", tasks[i].interval)
-                    print("Task id: ", tasks[j].id,", due date: ", date_to_day(tasks[j].due_date))
-                break
-
-
 # finds if an a-check could be scheduled in a later slot before its due date (considering all tasks have equal priority)
 def evaluate_calendar(tasks, calendar):
     count = 0
     for task in tasks:
+        sub_optimal = False
         if task.starting_day < task.due_date:
             for i in range(date_to_day(task.starting_day), date_to_day(task.due_date) + 1):
                 if task.type == "a-check":
                     if calendar[i].a_check_available and len(calendar[i].a_checks) < 1:
-                        count += 1
-                        print("Task ", task.number, " not optimal. Available day: ", calendar[i].date)
+                        sub_optimal = True
+                        print("Task ", task.number, "/", task.id, " not optimal. Available day: ", calendar[i].date)
+        if sub_optimal:
+            count += 1
     print("Total number of sub-optimal tasks: ", count)
 
 
@@ -310,3 +305,16 @@ def evaluate_priorities():
 
 
 # evaluate_priorities()
+
+#calculate the Earliness
+def EarlinessSum(taskList):
+ sumE = 0
+ for task in taskList:
+     starting_day = date_to_day(task.starting_day)
+     due_date = date_to_day(task.due_date)
+     E = due_date - starting_day
+     if (E < 0): #days after due date
+       E = 0
+     sumE = sumE + E
+ return sumE
+
